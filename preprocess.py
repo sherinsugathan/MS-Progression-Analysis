@@ -1,15 +1,16 @@
 import vtk
 import re
 import os
+import json
 from collections import defaultdict
 
 def compute_difference(followup_folder_names):
     # Check if already processed.
-    print("The input data folder is currently undergoing preprocessing for visualization, which requires a one-time execution. Please wait for this process to complete...")
     for followup_folder in followup_folder_names:
         if os.path.isfile(followup_folder + "/lesion_diff_on_union.vtm"):
             print("Skipping already processed case.")
             continue
+        print("The input data folder is currently undergoing preprocessing for visualization, which requires a one-time execution. Please wait for this process to complete...")
         print(f"Processing followup folder {followup_folder}.")
         file_pattern = re.compile(r'Lesion_(\d+)_(baseline|followup)\.nii\.gz')
         lesion_files = defaultdict(lambda: {'baseline': None, 'followup': None})
@@ -22,6 +23,7 @@ def compute_difference(followup_folder_names):
         mb = vtk.vtkMultiBlockDataSet()
         mb.SetNumberOfBlocks(num_items)
         block_number = 0
+        iterations_data = []
         for lesion_number, files in lesion_files.items():
             baseline_file = files['baseline']
             followup_file = files['followup']
@@ -32,7 +34,32 @@ def compute_difference(followup_folder_names):
                 print(f"Iteration {block_number}: Processing baseline and followup.")
                 probe_result_poly = volume_probe(full_path_baseline, full_path_followup)
                 mb.SetBlock(block_number, probe_result_poly)
+                # count data
+                count_zero = 0
+                count_minus_one = 0
+                count_one = 0
+                scalars = probe_result_poly.GetPointData().GetScalars()
+                for i in range(scalars.GetNumberOfTuples()):
+                    value = scalars.GetTuple1(i)
+                    if value == 0:
+                        count_zero += 1
+                    elif value <  0:
+                        count_minus_one += 1
+                    elif value > 0:
+                        count_one += 1
+                iteration_dict = {
+                    "iteration": block_number,
+                    "minus_one": count_minus_one,
+                    "zero": count_zero,
+                    "one": count_one
+                }
+                iterations_data.append(iteration_dict)
                 block_number = block_number + 1
+
+        # Write the list of dictionaries to a JSON file
+        with open(followup_folder + '/lesion_activity_data.json', 'w') as json_file:
+            json.dump(iterations_data, json_file, indent=4)
+
         writer = vtk.vtkXMLMultiBlockDataWriter()
         writer.SetFileName(followup_folder + "/" +'lesion_diff_on_union.vtm')
         writer.SetInputData(mb)
@@ -193,7 +220,7 @@ def volume_probe(baseline, followup):
     renderWindowInteractor.Initialize()
     renderWindowInteractor.Start()
 
-folders = ['C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m00_m12_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m12_m24_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m24_m36_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m36_m48_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m48_m60_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m60_m96_snacai']
+#folders = ['C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m00_m12_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m12_m24_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m24_m36_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m36_m48_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m48_m60_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m60_m96_snacai']
 #compute_difference(folders)
-generate_fast_files(folders)
+#generate_fast_files(folders)
 

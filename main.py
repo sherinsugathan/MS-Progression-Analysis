@@ -4,6 +4,7 @@ import vtk
 import argparse
 import os
 import glob
+import json
 import preprocess
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkRenderingCore import (
@@ -34,6 +35,10 @@ class MSApp(QMainWindow):
         followup_prefix = self.subject_name + "_"
         self.followup_folder_names = [f for f in glob.glob(os.path.join(self.subject_folder, followup_prefix + '*')) if os.path.isdir(f)]
 
+        # finish preprocessing
+        preprocess.compute_difference(self.followup_folder_names)
+        preprocess.generate_fast_files(self.followup_folder_names)
+
         self.followup_count = len(self.followup_folder_names)
         self.baseline = self.followup_folder_names[0] + "/Baseline_IDs.nii.gz"
         self.followup = self.followup_folder_names[0] + "/Followup_IDs.nii.gz"
@@ -46,6 +51,12 @@ class MSApp(QMainWindow):
         self.current_view = 0
         self.comparison_actor = None
         self.last_actor_choice = 0
+        self.current_filter_choice = 0 # 0: growing 1: shrinking 2: no change
+        self.activity_data = None
+        self.exclude_list = []
+        self.display_top_n = None
+        self.sliderInitialized = False
+        self.slider_widget = vtk.vtkSliderWidget()
 
         # Set up the main window
         self.setWindowTitle("MS - Progression Analysis")
@@ -61,8 +72,8 @@ class MSApp(QMainWindow):
         self.interactor.AddObserver("KeyPressEvent", self.keypress_callback)
         self.renderer.SetBackground(0.1, 0.2, 0.4)  # Background color
 
+        self.num_blocks = None
 
-        #self.renderSlider()
 
         modes = [
             vtkViewport.GradientModes.VTK_GRADIENT_VERTICAL,
@@ -90,6 +101,7 @@ class MSApp(QMainWindow):
         #print(self.vtkWidget.GetRenderWindow().ReportCapabilities())
         # Add OpenGL context information as text overlay
         self.text_overlay()
+
         self.renderer.ResetCamera()
 
     def text_overlay(self):
@@ -102,7 +114,14 @@ class MSApp(QMainWindow):
         else:
             current_view = "COMPARISON"
 
-        self.textActor.SetInput(f"Shortcut keys:\n--------------------\n<  > : Previous, Next\nT : Toggle Baseline/Followup\nC : Compare View\n--------------------\nData: {os.path.basename(self.followup_folder_names[self.currentFollowup])}\nCurrently Viewing: {current_view}\nOpenGL Context: {self.openglRendererInUse}")
+        current_filter = ""
+        if(self.current_filter_choice == 0):
+            current_filter = "GROWING LESIONS"
+        elif(self.current_filter_choice == 1):
+            current_filter = "SHRINKING LESIONS"
+        else:
+            current_filter = "UNCHANGED LESIONS"
+        self.textActor.SetInput(f"Shortcut keys:\n--------------------\n<  > : Previous, Next\nT : Toggle Baseline/Followup\nC : Compare View\nF : Toggle filter type (Growing/Shrinking/Unchanged)\n--------------------\nData: {os.path.basename(self.followup_folder_names[self.currentFollowup])}\nCurrently Viewing: {current_view}\nCurrent Filter: {current_filter}\nOpenGL Context: {self.openglRendererInUse}")
         self.textActor.GetTextProperty().SetColor(1.0, 1.0, 1.0)  # White text
         self.textActor.SetPosition(20, 20)  # Position in pixels from bottom left
         # Access the text property to modify font attributes
@@ -147,14 +166,82 @@ class MSApp(QMainWindow):
                 self.view_choice = self.last_actor_choice
                 self.read_subject_data(self.currentFollowup)
                 self.is_comparison = False
+        if key == "F" or key == "f": # UPDATE FILTER TYPE
+            self.current_filter_choice = self.current_filter_choice + 1
+            if(self.current_filter_choice==3):
+                self.current_filter_choice = 0
 
-    def renderSlider(self):
+            self.renderer.RemoveActor(self.textActor)
+            self.text_overlay()
+            self.interactor.Render()
+            #
+            # current_view = ""
+            # if (self.view_choice == 0):
+            #     current_view = "BASELINE"
+            # elif (self.view_choice == 1):
+            #     current_view = "FOLLOWUP"
+            # else:
+            #     current_view = "COMPARISON"
+            #
+            # current_filter = ""
+            # if (self.current_filter_choice == 0):
+            #     current_filter = "GROWING LESIONS"
+            # elif (self.current_filter_choice == 1):
+            #     current_filter = "SHRINKING LESIONS"
+            # else:
+            #     current_filter = "UNCHANGED LESIONS"
+            self.textActor.SetInput(f"Shortcut keys:\n--------------------\n<  > : Previous, Next\nT : Toggle Baseline/Followup\nC : Compare View\nF : Toggle filter type (Growing/Shrinking/Unchanged)\n--------------------\nData: {os.path.basename(self.followup_folder_names[self.currentFollowup])}\nCurrently Viewing: {current_view}\nCurrent Filter: {current_filter}\nOpenGL Context: {self.openglRendererInUse}")
+            #self.interactor.Render()
+            # if (self.is_comparison == False):
+            #     self.view_choice = 2
+            #     self.read_subject_data(self.currentFollowup)
+            #     self.is_comparison = True
+            # else:
+            #     self.view_choice = self.last_actor_choice
+            #     self.read_subject_data(self.currentFollowup)
+            #     self.is_comparison = False
+        # if key == "A" or key == "a": # APPLY FILTER
+        #     self.read_subject_data(self.currentFollowup)
+
+    def slider_callback(self, obj, event):
+        slider_rep = obj.GetRepresentation()
+        value = slider_rep.GetValue()
+        rounded_value = round(value)
+        self.display_top_n = rounded_value
+        self.exclude_list = []
+        current_query_item = ""
+        if (self.current_filter_choice == 0):
+            current_query_item = "one"
+        elif (self.current_filter_choice == 1):
+            current_query_item = "minus_one"
+        else:
+            current_query_item = "zero"
+
+        # Reading JSON data
+        for item in self.activity_data:
+            self.exclude_list.append(item[current_query_item])
+
+
+        #self.read_subject_data(self.currentFollowup , exclude_list)
+
+        # with open(activity_data_filename, 'r') as json_file:
+        #     self.activity_data = json.load(json_file)
+        #cone_actor.GetProperty().SetOpacity(value)
+    #         f"Iteration: {item['iteration']}, Value1: {item['minus_one']}, Value2: {item['zero']}, Value3: {item['one']}")
+
+    def renderSlider(self, text="Growing lesions (top N)"):
+        self.sliderInitialized = True
         # Create a slider representation
         slider_rep = vtk.vtkSliderRepresentation2D()
-        slider_rep.SetMinimumValue(0.0)
-        slider_rep.SetMaximumValue(self.followup_count-1)
-        slider_rep.SetValue(0.0)
-        slider_rep.SetTitleText("followup")
+        slider_rep.SetMinimumValue(1)
+        slider_rep.SetMaximumValue(self.num_blocks)
+
+        if(self.display_top_n!=None):
+            slider_rep.SetValue(self.display_top_n)
+        else:
+            slider_rep.SetValue(self.num_blocks)
+
+        slider_rep.SetTitleText(text)
         slider_rep.GetSliderProperty().SetColor(1, 0, 0)  # Slider color
         slider_rep.GetTitleProperty().SetColor(1, 1, 1)  # Title color
         slider_rep.GetLabelProperty().SetColor(1, 1, 0)  # Label color
@@ -163,6 +250,19 @@ class MSApp(QMainWindow):
         slider_rep.SetEndCapLength(0.01)
         slider_rep.SetEndCapWidth(0.01)
         slider_rep.SetTubeWidth(0.005)
+
+        labelProperty = slider_rep.GetLabelProperty()
+        titleProperty = slider_rep.GetTitleProperty()
+        valueProperty = slider_rep.GetLabelProperty()
+
+        # Set text properties to mimic Courier New's monospaced appearance
+        # Note: VTK doesn't allow setting the font to Courier New directly, but you can make it bold and monospaced
+        for textProperty in [labelProperty, titleProperty, valueProperty]:
+            textProperty.SetBold(1)  # Make the text bold
+            textProperty.SetItalic(0)  # Ensure text is not italic
+            textProperty.SetFontSize(8)  # Set font size
+            textProperty.SetFontFamilyToCourier()  # Use the Courier font family, which is monospaced like Courier New
+
         #slider_rep.SetMinimumValueText("Min")  # Optional
         #slider_rep.SetMaximumValueText("Max")  # Optional
         #slider_rep.SetPlaceFactor(1)  # This defines where the slider should be placed in the window
@@ -174,7 +274,6 @@ class MSApp(QMainWindow):
         slider_rep.GetPoint2Coordinate().SetValue(0.98, 0.1)
 
         # Create the slider widget
-        self.slider_widget = vtk.vtkSliderWidget()
         self.slider_widget.SetInteractor(self.interactor)
         self.slider_widget.SetRepresentation(slider_rep)
         self.slider_widget.KeyPressActivationOff()  # Prevents the widget from being activated/deactivated with the keyboard
@@ -185,7 +284,8 @@ class MSApp(QMainWindow):
 
     def read_subject_data(self, followupindex = 0):
         self.renderer.RemoveAllViewProps()
-
+        self.slider_widget.SetEnabled(True)
+        activity_data_filename = self.followup_folder_names[followupindex] + "/lesion_activity_data.json"
         if(self.view_choice == 0):
             data_file_name = self.followup_folder_names[followupindex] + "/lesions_baseline.vtm"
         if(self.view_choice == 1):
@@ -199,12 +299,27 @@ class MSApp(QMainWindow):
         reader.SetFileName(data_file_name)
         reader.Update()
 
+        # Reading JSON data
+        with open(activity_data_filename, 'r') as json_file:
+            self.activity_data = json.load(json_file)
+
+        if(self.exclude_list!= None and self.display_top_n!=None):
+            dict_from_list = {index: value for index, value in enumerate(self.exclude_list)}
+            sorted_dict = dict(sorted(dict_from_list.items(), key=lambda item: item[1]))
+            sorted_indices = list(sorted_dict.keys())
+            #print(sorted_dict)
+            #print(sorted_indices)
+            n = self.display_top_n
+            short_list = sorted_indices[-n:]
+
         # get the multiblock dataset
         mb = reader.GetOutput()
-
         # loop over all blocks and add each to the renderer
-        num_blocks = mb.GetNumberOfBlocks()
-        for i in range(num_blocks):
+        self.num_blocks = mb.GetNumberOfBlocks()
+        for i in range(self.num_blocks):
+            if(self.exclude_list!= None and self.display_top_n!=None):
+                if i not in short_list:
+                    continue
             nc = vtk.vtkNamedColors()
             lut = vtk.vtkLookupTable()
             lut.SetNumberOfTableValues(3)
@@ -212,6 +327,11 @@ class MSApp(QMainWindow):
             lut.SetTableValue(1, nc.GetColor4d("LightSlateGray"))
             lut.SetTableValue(2, nc.GetColor4d("PaleGreen"))
             lut.Build()
+
+            # # Accessing data
+            # for item in self.activity_data:
+            #     print(
+            #         f"Iteration: {item['iteration']}, Value1: {item['minus_one']}, Value2: {item['zero']}, Value3: {item['one']}")
 
             polydata = mb.GetBlock(i)
             mapper = vtk.vtkPolyDataMapper()
@@ -229,6 +349,11 @@ class MSApp(QMainWindow):
                 self.actor.SetVisibility(True)
                 self.last_actor_choice = self.view_choice
         self.text_overlay()
+
+        # if(self.sliderInitialized == True):
+        #     self.slider_widget.SetEnabled(True)
+        # else:
+        self.renderSlider()
         self.interactor.Render()
 
 if __name__ == "__main__":
