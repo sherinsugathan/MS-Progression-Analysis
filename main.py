@@ -57,6 +57,8 @@ class MSApp(QMainWindow):
         self.display_top_n = None
         self.sliderInitialized = False
         self.slider_widget = vtk.vtkSliderWidget()
+        self.perform_filter = False
+        self.lesion_actors = []
 
         # Set up the main window
         self.setWindowTitle("MS - Progression Analysis")
@@ -92,6 +94,7 @@ class MSApp(QMainWindow):
 
         self.interactor.Initialize()
         self.openglRendererInUse = self.vtkWidget.GetRenderWindow().ReportCapabilities().splitlines()[1].split(":")[1].strip()
+        self.text_overlay_initialize()
         self.read_subject_data()
         #self.show()
 
@@ -100,11 +103,28 @@ class MSApp(QMainWindow):
 
         #print(self.vtkWidget.GetRenderWindow().ReportCapabilities())
         # Add OpenGL context information as text overlay
-        self.text_overlay()
 
         self.renderer.ResetCamera()
 
-    def text_overlay(self):
+    def text_overlay_update(self):
+        current_view = ""
+        if (self.view_choice == 0):
+            current_view = "BASELINE"
+        elif (self.view_choice == 1):
+            current_view = "FOLLOWUP"
+        else:
+            current_view = "COMPARISON"
+
+        current_filter = ""
+        if (self.current_filter_choice == 0):
+            current_filter = "GROWING LESIONS"
+        elif (self.current_filter_choice == 1):
+            current_filter = "SHRINKING LESIONS"
+        else:
+            current_filter = "UNCHANGED LESIONS"
+        self.textActor.SetInput(f"Shortcut keys:\n--------------------\n<  > : Previous, Next\nT : Toggle Baseline/Followup\nC : Compare View\nF : Toggle filter type (Growing/Shrinking/Unchanged)\n--------------------\nData: {os.path.basename(self.followup_folder_names[self.currentFollowup])}\nCurrently Viewing: {current_view}\nCurrent Filter: {current_filter}\nOpenGL Context: {self.openglRendererInUse}")
+
+    def text_overlay_initialize(self):
         self.textActor = vtk.vtkTextActor()
         current_view = ""
         if(self.view_choice == 0):
@@ -140,6 +160,7 @@ class MSApp(QMainWindow):
             else:
                 self.currentFollowup = self.currentFollowup - 1
                 self.read_subject_data(self.currentFollowup)
+            self.renderSlider()
 
         if key == "Right": # NEXT SCAN
             if (self.currentFollowup == self.followup_count-1):
@@ -147,6 +168,7 @@ class MSApp(QMainWindow):
             else:
                 self.currentFollowup = self.currentFollowup + 1
                 self.read_subject_data(self.currentFollowup)
+            self.renderSlider()
 
         if key == "T" or key == "t":  # FOLLOWUP TOGGLE DISPLAY
             if(self.is_followup == False):
@@ -170,10 +192,30 @@ class MSApp(QMainWindow):
             self.current_filter_choice = self.current_filter_choice + 1
             if(self.current_filter_choice==3):
                 self.current_filter_choice = 0
+            self.text_overlay_update()
 
-            self.renderer.RemoveActor(self.textActor)
-            self.text_overlay()
+            self.exclude_list = []
+            current_query_item = ""
+            if (self.current_filter_choice == 0):
+                current_query_item = "minus_one"
+            elif (self.current_filter_choice == 1):
+                current_query_item = "one"
+            else:
+                current_query_item = "zero"
+
+            # Reading JSON data
+            for item in self.activity_data:
+                self.exclude_list.append(item[current_query_item])
+            self.read_subject_data(self.currentFollowup)
             self.interactor.Render()
+
+        if key == 'Return':
+            self.read_subject_data(self.currentFollowup)
+            self.interactor.Render()
+
+            # self.renderer.RemoveActor(self.textActor)
+            # self.text_overlay()
+            # self.interactor.Render()
             #
             # current_view = ""
             # if (self.view_choice == 0):
@@ -190,7 +232,8 @@ class MSApp(QMainWindow):
             #     current_filter = "SHRINKING LESIONS"
             # else:
             #     current_filter = "UNCHANGED LESIONS"
-            self.textActor.SetInput(f"Shortcut keys:\n--------------------\n<  > : Previous, Next\nT : Toggle Baseline/Followup\nC : Compare View\nF : Toggle filter type (Growing/Shrinking/Unchanged)\n--------------------\nData: {os.path.basename(self.followup_folder_names[self.currentFollowup])}\nCurrently Viewing: {current_view}\nCurrent Filter: {current_filter}\nOpenGL Context: {self.openglRendererInUse}")
+            #self.textActor.SetInput(f"Shortcut keys:\n--------------------\n<  > : Previous, Next\nT : Toggle Baseline/Followup\nC : Compare View\nF : Toggle filter type (Growing/Shrinking/Unchanged)\n--------------------\nData: {os.path.basename(self.followup_folder_names[self.currentFollowup])}\nCurrently Viewing: {current_view}\nCurrent Filter: {current_filter}\nOpenGL Context: {self.openglRendererInUse}")
+
             #self.interactor.Render()
             # if (self.is_comparison == False):
             #     self.view_choice = 2
@@ -283,7 +326,9 @@ class MSApp(QMainWindow):
 
 
     def read_subject_data(self, followupindex = 0):
-        self.renderer.RemoveAllViewProps()
+        #self.renderer.RemoveAllViewProps()
+        for item in self.lesion_actors:
+            self.renderer.RemoveActor(item)
         self.slider_widget.SetEnabled(True)
         activity_data_filename = self.followup_folder_names[followupindex] + "/lesion_activity_data.json"
         if(self.view_choice == 0):
@@ -311,15 +356,12 @@ class MSApp(QMainWindow):
             #print(sorted_indices)
             n = self.display_top_n
             short_list = sorted_indices[-n:]
-
+        self.lesion_actors = []
         # get the multiblock dataset
         mb = reader.GetOutput()
         # loop over all blocks and add each to the renderer
         self.num_blocks = mb.GetNumberOfBlocks()
         for i in range(self.num_blocks):
-            if(self.exclude_list!= None and self.display_top_n!=None):
-                if i not in short_list:
-                    continue
             nc = vtk.vtkNamedColors()
             lut = vtk.vtkLookupTable()
             lut.SetNumberOfTableValues(3)
@@ -342,13 +384,22 @@ class MSApp(QMainWindow):
                 self.comparison_actor = vtk.vtkActor()
                 self.comparison_actor.SetMapper(mapper)
                 self.renderer.AddActor(self.comparison_actor)
+                self.comparison_actor.SetVisibility(True)
+                self.lesion_actors.append(self.comparison_actor)
+                if (self.exclude_list != None and self.display_top_n != None):
+                    if i not in short_list:
+                        self.comparison_actor.SetVisibility(False)
             else:
                 self.actor = vtk.vtkActor()
                 self.actor.SetMapper(mapper)
                 self.renderer.AddActor(self.actor)
+                self.lesion_actors.append(self.actor)
                 self.actor.SetVisibility(True)
+                if (self.exclude_list != None and self.display_top_n != None):
+                    if i not in short_list:
+                        self.actor.SetVisibility(False)
                 self.last_actor_choice = self.view_choice
-        self.text_overlay()
+        self.text_overlay_update()
 
         # if(self.sliderInitialized == True):
         #     self.slider_widget.SetEnabled(True)
