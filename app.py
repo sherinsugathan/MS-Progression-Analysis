@@ -115,8 +115,8 @@ class mainWindow(qWidget.QMainWindow):
 
             print("Finished preprocessing.")
             self.label_FolderName.setText("Loaded: " + folder_name)
-            self.displayDefaultGeometry()
             self.text_overlay_initialize()
+            self.displayDefaultGeometry()
             self.renderer.ResetCamera()
 
     def closeEvent(self, QCloseEvent):
@@ -160,7 +160,7 @@ class mainWindow(qWidget.QMainWindow):
             self.renderer.AddActor(self.actor)
             self.lesion_actors.append(self.actor)
             self.actor.SetVisibility(True)
-
+        self.text_overlay_update(os.path.basename(self.followup_folder_names[self.studyIndex]))
         self.vtkWidget.Render()
 
         self.slider_data.setMinimum(0)
@@ -211,6 +211,7 @@ class mainWindow(qWidget.QMainWindow):
         self.vtkWidget.Render()
         self.spinBox_top_lesion.setMaximum(self.num_blocks)  # Maximum value
         self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
+        self.text_overlay_update(os.path.basename(self.followup_folder_names[self.studyIndex]))
 
     def displayComparisonGeometry(self, followupindex = 0):
         # Code to display comparison geometry
@@ -254,6 +255,7 @@ class mainWindow(qWidget.QMainWindow):
         self.vtkWidget.Render()
         self.spinBox_top_lesion.setMaximum(self.num_blocks)  # Maximum value
         self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
+        self.text_overlay_update(os.path.basename(self.followup_folder_names[self.studyIndex]))
 
     def displayWireframeGeometry(self):
         print('Displaying wireframe geometry')
@@ -274,7 +276,6 @@ class mainWindow(qWidget.QMainWindow):
     # Slider value changed handler
     def sliderValueChanged(self, value):
         self.label_study.setText(os.path.basename(self.followup_folder_names[value]))
-        self.text_overlay_update(os.path.basename(self.followup_folder_names[value]))
         if self.radioButton_default.isChecked(): # BASELINE
             self.displayDefaultGeometry(value)
         if self.radioButton_followup.isChecked(): # FOLLOWUP
