@@ -29,12 +29,8 @@ my_dataset/
 1. Clone the repository - `git clone https://github.com/sherinsugathan/MS-Progression-Analysis.git`
 2. Install dependencies.
    `pip install -r requirements.txt`
-3. Run `main.py` by providing your subject folder as an argument.`python main.py <input folder>`.
+3. Run `app.py`
 
-```shell
-Example:
-    python main.py /filesystem/folder/1001BC
-```
 ## Citation
 ```bibtex
 @article{Sugathan2022Longitudinal,
@@ -53,4 +49,3 @@ project = {ttmedvis},
 youtube = "https://youtu.be/uwcqSf1W-dc"
 }
 ```
-
