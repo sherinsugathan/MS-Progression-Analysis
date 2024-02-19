@@ -61,7 +61,9 @@ class mainWindow(qWidget.QMainWindow):
 
         self.lesion_actors = []
         self.studyIndex = 0
-
+        self.top_number = None
+        self.current_filter_choice = None
+        self.exclude_list = []
         self.renderer.ResetCamera()
         # Set the interactor style to trackball camera
         self.trackballStyle = vtkInteractorStyleTrackballCamera()
@@ -80,6 +82,39 @@ class mainWindow(qWidget.QMainWindow):
         self.radioButton_wireframe.clicked.connect(self.handleRadioButtonClicked)
         self.slider_data.valueChanged.connect(self.sliderValueChanged)
 
+    def spinBoxValueChanged(self):
+        value = self.spinBox_top_lesion.value()
+        followupIndex = self.slider_data.value()
+        self.current_filter_choice = self.comboBox_filter_type.currentText()
+        if (self.current_filter_choice == "Shrinking"):
+            current_query_item = "one"
+        if (self.current_filter_choice == "Growing"):
+            current_query_item = "minus_one"
+        if (self.current_filter_choice == "Unchanged"):
+            current_query_item = "zero"
+
+        # Reading JSON data
+        self.exclude_list.clear()
+        for item in self.activity_data:
+            self.exclude_list.append(item[current_query_item])
+        dict_from_list = {index: value for index, value in enumerate(self.exclude_list)}
+        sorted_dict = dict(sorted(dict_from_list.items(), key=lambda item: item[1]))
+        # print(sorted_dict)
+        sorted_indices = list(sorted_dict.keys())
+        shortlist_count = value
+        # print(sorted_indices)
+        selected_indices = sorted_indices[-shortlist_count:]
+
+        if self.radioButton_default.isChecked(): # BASELINE
+            self.top_number = value
+            self.displayDefaultGeometry(followupIndex, True, selected_indices)
+        if self.radioButton_followup.isChecked(): # FOLLOWUP
+            self.top_number = value
+            self.displayFollowupGeometry(followupIndex, True, selected_indices)
+        if self.radioButton_comparison.isChecked(): # COMPARISON
+            self.top_number = value
+            self.displayComparisonGeometry(followupIndex, True, selected_indices)
+
     def handleRadioButtonClicked(self):
         if self.radioButton_default.isChecked(): # BASELINE
             self.displayDefaultGeometry()
@@ -90,6 +125,11 @@ class mainWindow(qWidget.QMainWindow):
         if self.radioButton_wireframe.isChecked(): # WIREFRAME
             self.displayWireframeGeometry()
 
+    def currentFilterSelectionChanged(self, index):
+        # index is the new index of the combo box
+        selected_text = self.comboBox_filter_type.currentText()
+        #print(f"Selected: {selected_text} at index {index}")
+        self.spinBoxValueChanged()
 
     def selectFolder(self):
         folderPath = QFileDialog.getExistingDirectory(self, "Select Folder")
@@ -111,19 +151,22 @@ class mainWindow(qWidget.QMainWindow):
             self.radioButton_comparison.setEnabled(True)
             #self.radioButton_wireframe.setEnabled(True)  # Enable this adter implementing logic.
             self.spinBox_top_lesion.setEnabled(True)
+            self.comboBox_filter_type.setEnabled(True)
             self.spinBox_top_lesion.setMinimum(1)  # Minimum value
 
             print("Finished preprocessing.")
-            self.label_FolderName.setText("Loaded: " + folder_name)
+            self.label_FolderName.setText("Root Folder Loaded: " + folder_name)
             self.text_overlay_initialize()
             self.displayDefaultGeometry()
             self.renderer.ResetCamera()
+            self.spinBox_top_lesion.valueChanged.connect(self.spinBoxValueChanged)
+            self.comboBox_filter_type.currentIndexChanged.connect(self.currentFilterSelectionChanged)
 
     def closeEvent(self, QCloseEvent):
         super().closeEvent(QCloseEvent)
         self.vtkWidget.Finalize()
 
-    def displayDefaultGeometry(self, followupindex = 0):
+    def displayDefaultGeometry(self, followupindex = 0, count_update = False, indices = None):
         for actor in self.lesion_actors:
             self.renderer.RemoveActor(actor)
         self.lesion_actors.clear()
@@ -159,7 +202,13 @@ class mainWindow(qWidget.QMainWindow):
             self.actor.SetMapper(mapper)
             self.renderer.AddActor(self.actor)
             self.lesion_actors.append(self.actor)
-            self.actor.SetVisibility(True)
+            if indices != None:
+                if i in indices:
+                    self.actor.SetVisibility(True)
+                else:
+                    self.actor.SetVisibility(False)
+            else:
+                self.actor.SetVisibility(True)
         self.text_overlay_update(os.path.basename(self.followup_folder_names[self.studyIndex]))
         self.vtkWidget.Render()
 
@@ -169,9 +218,11 @@ class mainWindow(qWidget.QMainWindow):
 
         self.label_study.setText(os.path.basename(self.followup_folder_names[self.studyIndex]))
         self.spinBox_top_lesion.setMaximum(self.num_blocks)  # Maximum value
-        self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
+        if(count_update == False):
+            self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
 
-    def displayFollowupGeometry(self, followupindex = 0):
+
+    def displayFollowupGeometry(self, followupindex = 0, count_update = False, indices = None):
         for actor in self.lesion_actors:
             self.renderer.RemoveActor(actor)
         self.lesion_actors.clear()
@@ -206,14 +257,21 @@ class mainWindow(qWidget.QMainWindow):
             self.actor.SetMapper(mapper)
             self.renderer.AddActor(self.actor)
             self.lesion_actors.append(self.actor)
-            self.actor.SetVisibility(True)
+            if indices != None:
+                if i in indices:
+                    self.actor.SetVisibility(True)
+                else:
+                    self.actor.SetVisibility(False)
+            else:
+                self.actor.SetVisibility(True)
 
         self.vtkWidget.Render()
         self.spinBox_top_lesion.setMaximum(self.num_blocks)  # Maximum value
-        self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
+        if (count_update == False):
+            self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
         self.text_overlay_update(os.path.basename(self.followup_folder_names[self.studyIndex]))
 
-    def displayComparisonGeometry(self, followupindex = 0):
+    def displayComparisonGeometry(self, followupindex = 0, count_update = False, indices = None):
         # Code to display comparison geometry
         for actor in self.lesion_actors:
             self.renderer.RemoveActor(actor)
@@ -250,11 +308,18 @@ class mainWindow(qWidget.QMainWindow):
             self.actor.SetMapper(mapper)
             self.renderer.AddActor(self.actor)
             self.lesion_actors.append(self.actor)
-            self.actor.SetVisibility(True)
+            if indices != None:
+                if i in indices:
+                    self.actor.SetVisibility(True)
+                else:
+                    self.actor.SetVisibility(False)
+            else:
+                self.actor.SetVisibility(True)
 
         self.vtkWidget.Render()
         self.spinBox_top_lesion.setMaximum(self.num_blocks)  # Maximum value
-        self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
+        if(count_update == False):
+            self.spinBox_top_lesion.setValue(self.num_blocks)  # Initial value
         self.text_overlay_update(os.path.basename(self.followup_folder_names[self.studyIndex]))
 
     def displayWireframeGeometry(self):

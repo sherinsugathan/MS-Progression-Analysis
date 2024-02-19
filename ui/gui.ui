@@ -101,7 +101,7 @@
          <string notr="true">background-color: rgb(160, 201, 255);</string>
         </property>
         <property name="text">
-         <string>Set Root Data Folder</string>
+         <string>Set Root Folder</string>
         </property>
        </widget>
       </item>
@@ -308,7 +308,7 @@
            </font>
           </property>
           <property name="text">
-           <string>Filter</string>
+           <string>Order by</string>
           </property>
          </widget>
         </item>
@@ -340,7 +340,7 @@
            </font>
           </property>
           <property name="text">
-           <string>Show</string>
+           <string>Show top</string>
           </property>
          </widget>
         </item>
