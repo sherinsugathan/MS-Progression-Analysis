@@ -64,10 +64,13 @@ class mainWindow(qWidget.QMainWindow):
         self.top_number = None
         self.current_filter_choice = None
         self.exclude_list = []
+        self.legend = vtk.vtkLegendBoxActor()
+
         self.renderer.ResetCamera()
         # Set the interactor style to trackball camera
         self.trackballStyle = vtkInteractorStyleTrackballCamera()
         self.iren.SetInteractorStyle(self.trackballStyle)
+        self.iren.AddObserver("KeyPressEvent", self.iren_keyPressEvent)
         # Start the VTK event loop
         self.vtkWidget.Initialize()
         self.vtkWidget.Start()
@@ -76,10 +79,10 @@ class mainWindow(qWidget.QMainWindow):
         print("Starting application...")
         self.comboBox_filter_type.addItems(["Shrinking", "Growing", "Unchanged"])
         self.pushButton_SetInputData.clicked.connect(self.selectFolder)
-        self.radioButton_default.clicked.connect(self.handleRadioButtonClicked)
-        self.radioButton_followup.clicked.connect(self.handleRadioButtonClicked)
-        self.radioButton_comparison.clicked.connect(self.handleRadioButtonClicked)
-        self.radioButton_wireframe.clicked.connect(self.handleRadioButtonClicked)
+        self.radioButton_default.toggled.connect(self.handleRadioButtonClicked)
+        self.radioButton_followup.toggled.connect(self.handleRadioButtonClicked)
+        self.radioButton_comparison.toggled.connect(self.handleRadioButtonClicked)
+        self.radioButton_wireframe.toggled.connect(self.handleRadioButtonClicked)
         self.slider_data.valueChanged.connect(self.sliderValueChanged)
 
     def spinBoxValueChanged(self):
@@ -144,11 +147,14 @@ class mainWindow(qWidget.QMainWindow):
                 print("No relevant data files found in source folder. Exiting...")
                 return
             self.followup_folder_names.sort()
-            preprocess.compute_difference(self.followup_folder_names)
-            preprocess.generate_fast_files(self.followup_folder_names)
+
+            ##### Run preprocessing
+            preprocess.run_preprocess(self.followup_folder_names)
+
             self.radioButton_default.setEnabled(True)
             self.radioButton_followup.setEnabled(True)
             self.radioButton_comparison.setEnabled(True)
+            self.slider_data.setEnabled(True)
             #self.radioButton_wireframe.setEnabled(True)  # Enable this adter implementing logic.
             self.spinBox_top_lesion.setEnabled(True)
             self.comboBox_filter_type.setEnabled(True)
@@ -157,6 +163,8 @@ class mainWindow(qWidget.QMainWindow):
             print("Finished preprocessing.")
             self.label_FolderName.setText("Root Folder Loaded: " + folder_name)
             self.text_overlay_initialize()
+            self.text_shortcut_overlay_initialize()
+            self.display_legend()
             self.displayDefaultGeometry()
             self.renderer.ResetCamera()
             self.spinBox_top_lesion.valueChanged.connect(self.spinBoxValueChanged)
@@ -173,6 +181,7 @@ class mainWindow(qWidget.QMainWindow):
 
         activity_data_filename = self.followup_folder_names[followupindex] + "/lesion_activity_data.json"
         data_file_name = self.followup_folder_names[followupindex] + "/lesions_baseline.vtm"
+        self.renderer.RemoveActor(self.legend)
 
         # reader
         reader = vtk.vtkXMLMultiBlockDataReader()
@@ -186,20 +195,22 @@ class mainWindow(qWidget.QMainWindow):
         mb = reader.GetOutput()
         self.num_blocks = mb.GetNumberOfBlocks()
         for i in range(self.num_blocks):
-            nc = vtk.vtkNamedColors()
-            lut = vtk.vtkLookupTable()
-            lut.SetNumberOfTableValues(3)
-            lut.SetTableValue(0, nc.GetColor4d("LightCoral"))
-            lut.SetTableValue(1, nc.GetColor4d("LightSlateGray"))
-            lut.SetTableValue(2, nc.GetColor4d("PaleGreen"))
-            lut.Build()
+            # nc = vtk.vtkNamedColors()
+            # lut = vtk.vtkLookupTable()
+            # lut.SetNumberOfTableValues(3)
+            # lut.SetTableValue(0, nc.GetColor4d("LightCoral"))
+            # lut.SetTableValue(1, nc.GetColor4d("LightSlateGray"))
+            # lut.SetTableValue(2, nc.GetColor4d("PaleGreen"))
+            # lut.Build()
             polydata = mb.GetBlock(i)
             mapper = vtk.vtkPolyDataMapper()
             mapper.SetInputData(polydata)
-            mapper.SetLookupTable(lut)
-            mapper.SetScalarRange(polydata.GetScalarRange())
+            #mapper.SetLookupTable(lut)
+            #mapper.SetScalarRange(polydata.GetScalarRange())
+            mapper.SetScalarVisibility(0)
             self.actor = vtk.vtkActor()
             self.actor.SetMapper(mapper)
+            self.actor.GetProperty().SetColor(1.0, 1.0, 1.0)
             self.renderer.AddActor(self.actor)
             self.lesion_actors.append(self.actor)
             if indices != None:
@@ -214,7 +225,7 @@ class mainWindow(qWidget.QMainWindow):
 
         self.slider_data.setMinimum(0)
         self.slider_data.setMaximum(len(self.followup_folder_names)-1)
-        self.slider_data.setValue(self.studyIndex)  # Initial slider position
+        #self.slider_data.setValue(self.studyIndex)  # Initial slider position
 
         self.label_study.setText(os.path.basename(self.followup_folder_names[self.studyIndex]))
         self.spinBox_top_lesion.setMaximum(self.num_blocks)  # Maximum value
@@ -228,6 +239,7 @@ class mainWindow(qWidget.QMainWindow):
         self.lesion_actors.clear()
         activity_data_filename = self.followup_folder_names[followupindex] + "/lesion_activity_data.json"
         data_file_name = self.followup_folder_names[followupindex] + "/lesions_followup.vtm"
+        self.renderer.RemoveActor(self.legend)
 
         # reader
         reader = vtk.vtkXMLMultiBlockDataReader()
@@ -241,20 +253,22 @@ class mainWindow(qWidget.QMainWindow):
         mb = reader.GetOutput()
         self.num_blocks = mb.GetNumberOfBlocks()
         for i in range(self.num_blocks):
-            nc = vtk.vtkNamedColors()
-            lut = vtk.vtkLookupTable()
-            lut.SetNumberOfTableValues(3)
-            lut.SetTableValue(0, nc.GetColor4d("LightCoral"))
-            lut.SetTableValue(1, nc.GetColor4d("LightSlateGray"))
-            lut.SetTableValue(2, nc.GetColor4d("PaleGreen"))
-            lut.Build()
+            # nc = vtk.vtkNamedColors()
+            # lut = vtk.vtkLookupTable()
+            # lut.SetNumberOfTableValues(3)
+            # lut.SetTableValue(0, nc.GetColor4d("LightCoral"))
+            # lut.SetTableValue(1, nc.GetColor4d("LightSlateGray"))
+            # lut.SetTableValue(2, nc.GetColor4d("PaleGreen"))
+            # lut.Build()
             polydata = mb.GetBlock(i)
             mapper = vtk.vtkPolyDataMapper()
             mapper.SetInputData(polydata)
-            mapper.SetLookupTable(lut)
-            mapper.SetScalarRange(polydata.GetScalarRange())
+            #mapper.SetLookupTable(lut)
+            #mapper.SetScalarRange(polydata.GetScalarRange())
+            mapper.SetScalarVisibility(0)
             self.actor = vtk.vtkActor()
             self.actor.SetMapper(mapper)
+            self.actor.GetProperty().SetColor(1.0, 1.0, 1.0)
             self.renderer.AddActor(self.actor)
             self.lesion_actors.append(self.actor)
             if indices != None:
@@ -279,6 +293,7 @@ class mainWindow(qWidget.QMainWindow):
 
         activity_data_filename = self.followup_folder_names[followupindex] + "/lesion_activity_data.json"
         data_file_name = self.followup_folder_names[followupindex] + "/lesion_diff_on_union.vtm"
+        self.renderer.AddActor(self.legend)
 
         # reader
         reader = vtk.vtkXMLMultiBlockDataReader()
@@ -327,13 +342,60 @@ class mainWindow(qWidget.QMainWindow):
 
     def text_overlay_initialize(self):
         self.textActor = vtk.vtkTextActor()
-        #self.textActor.SetInput(f"Data:")
         self.textActor.GetTextProperty().SetColor(1.0, 1.0, 1.0)  # White text
         self.textActor.SetPosition(20, 20)  # Position in pixels from bottom left
         textProperty = self.textActor.GetTextProperty()
         textProperty.SetFontFamilyToCourier()
-        textProperty.SetFontSize(20)
+        textProperty.SetFontSize(18)
         self.renderer.AddActor(self.textActor)
+
+    def display_legend(self):
+        nc = vtk.vtkNamedColors()
+        sphereSource = vtk.vtkSphereSource()
+        sphereSource.SetCenter(0.0, 0.0, 0.0)
+        sphereSource.SetRadius(50.0)
+        sphereSource.Update()
+        self.legend.SetNumberOfEntries(3)
+        self.legend.GetEntryTextProperty().SetFontFamilyToCourier()
+        self.legend.SetEntry(0, sphereSource.GetOutput(), "Growing",  nc.GetColor3d("LightCoral"))
+        self.legend.SetEntry(1, sphereSource.GetOutput(), "Unchanged", nc.GetColor3d("LightSlateGray"))
+        self.legend.SetEntry(2, sphereSource.GetOutput(), "Shrinking", nc.GetColor3d("PaleGreen"))
+        self.legend.SetBorder(0)
+        self.legend.SetBox(0)
+        self.legend.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+        self.legend.SetPosition(0.9, 0.5)  # Position at lower left
+        self.legend.SetPosition2(0.08, 0.08)  # Size of the legend box
+        self.legend.SetBackgroundColor(0.1, 0.1, 0.1)  # Dark background for visibility
+
+    def text_shortcut_overlay_initialize(self):
+        self.shortcutsActor = vtk.vtkTextActor()
+        self.shortcutsActor.SetInput(f"< : Previous\n> : Next\nB : Baseline\nF : Followup\nC : Comparison")
+        self.shortcutsActor.GetTextProperty().SetColor(1.0, 1.0, 1.0)  # White text
+        self.shortcutsActor.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+        self.shortcutsActor.SetPosition(0.01, 0.85)  # Position in pixels from bottom left
+        textProperty = self.shortcutsActor.GetTextProperty()
+        textProperty.SetFontFamilyToCourier()
+        textProperty.SetFontSize(16)
+        self.renderer.AddActor(self.shortcutsActor)
+
+    def iren_keyPressEvent(self, obj, event):
+        key = obj.GetKeySym()  # Get the key symbol for the pressed key
+        if key == "Left":
+            currentValue = self.slider_data.value()
+            minValue = self.slider_data.minimum()
+            if currentValue > minValue:
+                self.slider_data.setValue(currentValue - 1)
+        elif key == "Right":
+            currentValue = self.slider_data.value()
+            maxValue = self.slider_data.maximum()
+            if currentValue < maxValue:
+                self.slider_data.setValue(currentValue + 1)
+        elif key == "B" or key == "b":
+            self.radioButton_default.setChecked(True)
+        elif key == "F" or key == "f":
+            self.radioButton_followup.setChecked(True)
+        elif key == "C" or key == "c":
+            self.radioButton_comparison.setChecked(True)
 
     def text_overlay_update(self, str):
         self.textActor.SetInput(f"Data: " + str)

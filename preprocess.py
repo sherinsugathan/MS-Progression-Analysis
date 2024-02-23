@@ -8,17 +8,34 @@ def compute_difference(followup_folder_names):
     # Check if already processed.
     for followup_folder in followup_folder_names:
         if os.path.isfile(followup_folder + "/lesion_diff_on_union.vtm"):
-            print("Skipping already processed case.")
-            continue
+          print("Lesion comparison data already computed. Skipping...")
+          continue
         print("The input data folder is currently undergoing preprocessing for visualization, which requires a one-time execution. Please wait for this process to complete...")
         print(f"Processing followup folder {followup_folder}.")
-        file_pattern = re.compile(r'Lesion_(\d+)_(baseline|followup)\.nii\.gz')
+
         lesion_files = defaultdict(lambda: {'baseline': None, 'followup': None})
-        for filename in os.listdir(followup_folder):
-            match = file_pattern.match(filename)
-            if match:
-                lesion_number, file_type = match.groups()
-                lesion_files[lesion_number][file_type] = filename
+
+        baseline_shifted_folder = followup_folder + "/Shifted_lesions"
+        if os.path.isdir(baseline_shifted_folder): # Shifted lesions folder exists
+            file_pattern = re.compile(r'Lesion_(\d+)_baseline_flirt\.nii\.gz')
+            for filename in os.listdir(baseline_shifted_folder):
+                match = file_pattern.match(filename)
+                if match:
+                    lesion_number = match.group(1)
+                    lesion_files[lesion_number]['baseline'] = os.path.join(baseline_shifted_folder, filename)
+            file_pattern = re.compile(r'Lesion_(\d+)_followup\.nii\.gz')
+            for filename in os.listdir(followup_folder):
+                match = file_pattern.match(filename)
+                if match:
+                    lesion_number = match.group(1)
+                    lesion_files[lesion_number]['followup'] = os.path.join(followup_folder, filename)
+        else: # There is no "ShiftedLesions" folder
+            file_pattern = re.compile(r'Lesion_(\d+)_(baseline|followup)\.nii\.gz')
+            for filename in os.listdir(followup_folder):
+                match = file_pattern.match(filename)
+                if match:
+                    lesion_number, file_type = match.groups()
+                    lesion_files[lesion_number][file_type] = filename
         num_items = len(lesion_files)
         mb = vtk.vtkMultiBlockDataSet()
         mb.SetNumberOfBlocks(num_items)
@@ -28,8 +45,23 @@ def compute_difference(followup_folder_names):
             baseline_file = files['baseline']
             followup_file = files['followup']
             if baseline_file and followup_file:
-                full_path_baseline = os.path.join(followup_folder, baseline_file)
-                full_path_followup = os.path.join(followup_folder, followup_file)
+                #full_path_baseline = os.path.join(followup_folder, baseline_file)
+                new_filename = baseline_file.replace("baseline.nii.gz", "baseline_flirt.nii.gz")
+                shifted_lesions_file_path = os.path.join(followup_folder + "/Shifted_lesions/", new_filename)
+                #print("The path is", shifted_lesions_file_path)
+                if os.path.exists(shifted_lesions_file_path):
+                    full_path_baseline = shifted_lesions_file_path
+                    print("Reading shifted lesion baseline data.")
+                else:
+                    full_path_baseline = os.path.join(followup_folder, baseline_file)
+
+                confluent_preprocessed_filepath = followup_folder + "/confluent_preprocessed/" + followup_file
+                if os.path.exists(confluent_preprocessed_filepath):
+                    full_path_followup = confluent_preprocessed_filepath
+                    print("Reading confluent lesion filtered data.")
+                else:
+                    full_path_followup = os.path.join(followup_folder, followup_file)
+
                 #print(full_path_baseline, full_path_followup)
                 print(f"Iteration {block_number}: Processing baseline and followup.")
                 probe_result_poly = volume_probe(full_path_baseline, full_path_followup)
@@ -71,9 +103,9 @@ def compute_difference(followup_folder_names):
 def generate_fast_files(followup_folder_names):
     for followup_folder in followup_folder_names:
         if os.path.isfile(followup_folder + "/lesions_baseline.vtm") and os.path.isfile(followup_folder + "/lesions_followup.vtm"):
-            print("Skipping already processed case.")
-            continue
-        print(f"Processing followup folder {followup_folder}.")
+          print("Fast access files already created. Skipping...")
+          continue
+        print(f"gen fastProcessing followup folder {followup_folder}.")
         file_pattern = re.compile(r'Lesion_(\d+)_(baseline|followup)\.nii\.gz')
         lesion_files = defaultdict(lambda: {'baseline': None, 'followup': None})
         for filename in os.listdir(followup_folder):
@@ -91,8 +123,23 @@ def generate_fast_files(followup_folder_names):
             baseline_file = files['baseline']
             followup_file = files['followup']
             if baseline_file and followup_file:
-                full_path_baseline = os.path.join(followup_folder, baseline_file)
-                full_path_followup = os.path.join(followup_folder, followup_file)
+                #full_path_baseline = os.path.join(followup_folder, baseline_file)
+
+                new_filename = baseline_file.replace("baseline.nii.gz", "baseline_flirt.nii.gz")
+                shifted_lesions_file_path = os.path.join(followup_folder + "/Shifted_lesions/", new_filename)
+                print("The path is", shifted_lesions_file_path)
+                if os.path.exists(shifted_lesions_file_path):
+                    full_path_baseline = shifted_lesions_file_path
+                    print("Reading shifted lesion baseline data.")
+                else:
+                    full_path_baseline = os.path.join(followup_folder, baseline_file)
+
+                confluent_preprocessed_filepath = followup_folder + "/confluent_preprocessed/" + followup_file
+                if os.path.exists(confluent_preprocessed_filepath):
+                    full_path_followup = confluent_preprocessed_filepath
+                    print("Reading confluent lesion filtered data.")
+                else:
+                    full_path_followup = os.path.join(followup_folder, followup_file)
                 print(f"Iteration {block_number}: Processing baseline and followup.")
                 reader_baseline = vtk.vtkNIFTIImageReader()
                 reader_baseline.SetFileName(full_path_baseline)
@@ -126,8 +173,6 @@ def generate_fast_files(followup_folder_names):
 
 def volume_probe(baseline, followup):
     # Creating union image
-    #maskFileName1 = "C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m00_m12_snacai/Lesion_4_baseline.nii"
-    #maskFileName2 = "C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m00_m12_snacai/Lesion_4_followup.nii.gz"
     niftiReaderLesionMask1 = vtk.vtkNIFTIImageReader()
     niftiReaderLesionMask1.SetFileName(baseline)
     niftiReaderLesionMask1.Update()
@@ -220,7 +265,86 @@ def volume_probe(baseline, followup):
     renderWindowInteractor.Initialize()
     renderWindowInteractor.Start()
 
+def generate_followup_no_confluent(followup_folder_names):
+    for followup_folder in followup_folder_names:
+        if os.path.isdir(followup_folder + "/confluent_preprocessed"):
+          print("Confluent lesions already processed. Skipping...")
+          continue
+        print(f"Processing followup folder {followup_folder}.")
+        file_pattern = re.compile(r'Lesion_(\d+)_followup\.nii\.gz')
+        lesion_files = defaultdict(lambda: {'baseline': None, 'followup': None})
+        for filename in os.listdir(followup_folder):
+            match = file_pattern.match(filename)
+            if match:
+                lesion_number = match.group(1)
+                lesion_files[lesion_number]['followup'] = os.path.join(followup_folder, filename)
+        #print(lesion_files)
+        for lesion_number, files in lesion_files.items():
+            followup_file = files['followup']
+
+            confluent_lesion_annotation_filepath = followup_folder + "/Shifted_lesions/misc/All_lumps_followup.nii.gz"
+            if os.path.exists(confluent_lesion_annotation_filepath):
+                print("Found confluent lesion annotation.")
+                confluent_preprocess_path = followup_folder + "/confluent_preprocessed"
+                if not os.path.exists(confluent_preprocess_path):
+                    os.makedirs(confluent_preprocess_path)
+                # print(followup_file)
+                # print(confluent_lesion_annotation_filepath)
+
+                confluent_removed_image_data = remove_confluent_lesion(followup_file, confluent_lesion_annotation_filepath)
+                confluent_removed_image_data_filename = confluent_preprocess_path + "/" + os.path.basename(followup_file)
+
+                writer = vtk.vtkNIFTIImageWriter()
+                writer.SetFileName(confluent_removed_image_data_filename)
+                writer.SetInputData(confluent_removed_image_data)
+                writer.Write()
+                print("Wrote followup data with confluent lesion removed: ", os.path.basename(followup_file))
+            else:
+                print("No confluent lesion annotations found.")
+
+def cast_image(image, target_scalar_type):
+    cast = vtk.vtkImageCast()
+    cast.SetInputData(image)
+    cast.SetOutputScalarType(target_scalar_type)
+    cast.Update()
+    return cast.GetOutput()
+
+def remove_confluent_lesion(followup_file, confluent_lesion_annotation_filepath):
+    reader1 = vtk.vtkNIFTIImageReader()
+    reader1.SetFileName(followup_file)
+    reader1.Update()
+
+    reader2 = vtk.vtkNIFTIImageReader()
+    reader2.SetFileName(confluent_lesion_annotation_filepath)
+    reader2.Update()
+
+    image1_cast = cast_image(reader1.GetOutput(), vtk.VTK_UNSIGNED_CHAR)
+    image2_cast = cast_image(reader2.GetOutput(), vtk.VTK_UNSIGNED_CHAR)
+
+    math1 = vtk.vtkImageLogic()
+    math1.SetInput1Data(image1_cast)
+    math1.SetInput2Data(image2_cast)
+    math1.SetOperationToAnd()  # Subtract volumes
+    math1.Update()
+
+    image3_cast = cast_image(reader1.GetOutput(), vtk.VTK_UNSIGNED_CHAR)
+    image4_cast = cast_image(math1.GetOutput(), vtk.VTK_UNSIGNED_CHAR)
+
+    math2 = vtk.vtkImageLogic()
+    math2.SetInput1Data(image3_cast)
+    math2.SetInput2Data(image4_cast)
+    math2.SetOperationToXor()  # Subtract volumes
+    math2.Update()
+
+    return math2.GetOutput()
+
+def run_preprocess(followup_folder_names):
+    generate_followup_no_confluent(followup_folder_names)
+    compute_difference(followup_folder_names)
+    generate_fast_files(followup_folder_names)
+
 #folders = ['C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m00_m12_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m12_m24_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m24_m36_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m36_m48_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m48_m60_snacai', 'C:/Sherin/Workspace/1_ProjectSource/27_Samuel_MS_Feature/Subjects_Matched_new/Subjects_Matched/1001BC/1001BC_m60_m96_snacai']
 #compute_difference(folders)
 #generate_fast_files(folders)
 
+#generate_followup_no_confluent(folders)

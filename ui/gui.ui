@@ -134,11 +134,47 @@
         </item>
         <item>
          <widget class="QSlider" name="slider_data">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="cursor">
+           <cursorShape>OpenHandCursor</cursorShape>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">.QSlider {
+min-height: 68px;
+    max-height: 68px;
+}
+
+.QSlider::groove:horizontal {
+    border: 1px solid rgb(62,126, 209);
+    height: 5px;
+    background: rgb(160, 201, 255);
+    margin: 0 12px;
+}
+
+.QSlider::handle:horizontal {
+    background: rgb(160, 201, 255);
+    border: 2px solid rgb(62,126, 209);
+    width: 20px;
+    height: 100px;
+    margin: -12px -12px;
+}</string>
+          </property>
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
           </property>
+          <property name="invertedControls">
+           <bool>false</bool>
+          </property>
           <property name="tickPosition">
-           <enum>QSlider::TicksBelow</enum>
+           <enum>QSlider::TicksAbove</enum>
           </property>
           <property name="tickInterval">
            <number>1</number>
